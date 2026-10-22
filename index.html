@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spot the Difference Symbol Grid Puzzle</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-amber-50 min-h-screen font-sans">
+<div class="max-w-5xl mx-auto px-4 py-6">
+  <h1 class="text-3xl font-bold text-center text-amber-900 mb-1">Spot the Difference</h1>
+  <p class="text-center text-amber-700 mb-4">Find all differences between the two symbol grids</p>
+
+  <!-- Controls -->
+  <div class="flex flex-wrap gap-3 justify-center mb-4">
+    <div>
+      <label for="difficulty" class="text-sm font-medium text-amber-800 mr-1">Difficulty:</label>
+      <select id="difficulty" class="border border-amber-300 rounded-lg px-2 py-1 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" aria-label="Select difficulty">
+        <option value="easy">Easy (4×4, 3 diffs)</option>
+        <option value="medium" selected>Medium (6×6, 5 diffs)</option>
+        <option value="hard">Hard (8×8, 8 diffs)</option>
+      </select>
+    </div>
+    <button id="new-game-btn" class="px-4 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 transition" aria-label="Start new game">New Game</button>
+    <button id="hint-btn" class="px-4 py-1.5 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600 transition" aria-label="Show a hint">Hint</button>
+    <div class="flex items-center gap-2 text-sm font-medium text-amber-800">
+      <span>⏱</span><span id="timer">0:00</span>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="text-center text-sm mb-4 h-6" id="status-bar" aria-live="polite"></div>
+
+  <!-- Grids -->
+  <div class="grid grid-cols-2 gap-4">
+    <div>
+      <div class="text-center font-semibold text-amber-800 mb-2">Grid A (Original)</div>
+      <div id="grid-a" class="grid gap-1 mx-auto" role="grid" aria-label="Grid A original"></div>
+    </div>
+    <div>
+      <div class="text-center font-semibold text-amber-800 mb-2">Grid B (Find differences)</div>
+      <div id="grid-b" class="grid gap-1 mx-auto" role="grid" aria-label="Grid B modified"></div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="text-center mt-4 text-amber-700 font-medium" id="progress-text"></div>
+</div>
+
+<script>
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+const SYMBOLS = ['★','●','■','▲','♥','♦','✿','⚡','☁','☀','♫','✈','⚓','♛','⊕','⬟'];
+
+const CONFIGS = {
+  easy:   { size: 4, diffs: 3 },
+  medium: { size: 6, diffs: 5 },
+  hard:   { size: 8, diffs: 8 },
+};
+
+let state = {
+  gridA: [], gridB: [], size: 0, diffs: 0,
+  diffPositions: [], found: [],
+  timerInterval: null, seconds: 0,
+  hintUsed: false, gameOver: false
+};
+
+function randInt(n) { return Math.floor(Math.random() * n); }
+function pick(arr) { return arr[randInt(arr.length)]; }
+
+function startGame() {
+  clearInterval(state.timerInterval);
+  const diff = document.getElementById('difficulty').value;
+  const cfg = CONFIGS[diff];
+  const { size, diffs } = cfg;
+  const sym = SYMBOLS.slice(0, Math.min(size * 2, SYMBOLS.length));
+
+  // Build grid A
+  const gridA = [];
+  for (let i = 0; i < size * size; i++) gridA.push(pick(sym));
+
+  // Copy to grid B, then change `diffs` cells
+  const gridB = [...gridA];
+  const positions = [];
+  while (positions.length < diffs) {
+    const pos = randInt(size * size);
+    if (!positions.includes(pos)) positions.push(pos);
+  }
+  for (const pos of positions) {
+    let newSym;
+    do { newSym = pick(sym); } while (newSym === gridB[pos]);
+    gridB[pos] = newSym;
+  }
+
+  state = {
+    gridA, gridB, size, diffs,
+    diffPositions: positions,
+    found: [],
+    timerInterval: null, seconds: 0,
+    hintUsed: false, gameOver: false
+  };
+
+  renderGrids();
+  updateProgress();
+  document.getElementById('status-bar').textContent = '';
+  document.getElementById('timer').textContent = '0:00';
+  clearInterval(state.timerInterval);
+  state.timerInterval = setInterval(() => {
+    if (state.gameOver) return;
+    state.seconds++;
+    const m = Math.floor(state.seconds / 60);
+    const s = state.seconds % 60;
+    document.getElementById('timer').textContent = m + ':' + String(s).padStart(2,'0');
+  }, 1000);
+}
+
+function renderGrids() {
+  const { size } = state;
+  const cellSize = size <= 4 ? 64 : size <= 6 ? 52 : 40;
+  const fontSize = size <= 4 ? 'text-2xl' : size <= 6 ? 'text-xl' : 'text-base';
+
+  for (const which of ['a','b']) {
+    const el = document.getElementById('grid-' + which);
+    el.style.gridTemplateColumns = 'repeat(' + size + ', ' + cellSize + 'px)';
+    el.innerHTML = '';
+    const grid = which === 'a' ? state.gridA : state.gridB;
+
+    for (let i = 0; i < grid.length; i++) {
+      const cell = document.createElement('button');
+      cell.className = 'flex items-center justify-center rounded-lg border-2 border-amber-200 bg-white hover:bg-amber-100 transition select-none cursor-pointer ' + fontSize;
+      cell.style.width = cellSize + 'px';
+      cell.style.height = cellSize + 'px';
+      cell.textContent = grid[i];
+      cell.setAttribute('aria-label', 'Cell ' + (i+1) + ': ' + grid[i]);
+      cell.setAttribute('role', 'gridcell');
+      cell.dataset.idx = String(i);
+      cell.dataset.which = which;
+
+      // Mark already found
+      if (state.found.includes(i)) {
+        cell.className = cell.className.replace('bg-white','bg-green-200');
+        cell.className += ' ring-2 ring-green-500';
+      }
+
+      cell.addEventListener('click', () => onCellClick(i, which));
+      el.appendChild(cell);
+    }
+  }
+}
+
+function onCellClick(idx, which) {
+  if (state.gameOver) return;
+  // Only grid B cells are clickable for differences
+  if (which !== 'b') {
+    document.getElementById('status-bar').textContent = 'Click on cells in Grid B to mark differences.';
+    return;
+  }
+
+  if (state.found.includes(idx)) return;
+
+  if (state.diffPositions.includes(idx)) {
+    state.found.push(idx);
+    document.getElementById('status-bar').textContent = 'Correct! +1 found';
+    if (state.found.length === state.diffs) {
+      clearInterval(state.timerInterval);
+      state.gameOver = true;
+      document.getElementById('status-bar').textContent = '🎉 Congratulations! You found all ' + state.diffs + ' differences!';
+    }
+    renderGrids();
+    updateProgress();
+  } else {
+    // Flash wrong
+    document.getElementById('status-bar').textContent = 'Not a difference — keep looking!';
+  }
+}
+
+function updateProgress() {
+  document.getElementById('progress-text').textContent = 'Found: ' + state.found.length + ' / ' + state.diffs;
+}
+
+document.getElementById('new-game-btn').addEventListener('click', startGame);
+document.getElementById('difficulty').addEventListener('change', startGame);
+
+document.getElementById('hint-btn').addEventListener('click', () => {
+  if (state.gameOver) return;
+  const unfound = state.diffPositions.filter(p => !state.found.includes(p));
+  if (unfound.length === 0) return;
+  const hint = unfound[randInt(unfound.length)];
+  // Briefly highlight in grid B
+  const cells = document.getElementById('grid-b').querySelectorAll('button');
+  const cell = cells[hint];
+  if (cell) {
+    cell.classList.add('ring-4','ring-yellow-400','bg-yellow-100');
+    setTimeout(() => {
+      cell.classList.remove('ring-4','ring-yellow-400','bg-yellow-100');
+    }, 1500);
+  }
+  document.getElementById('status-bar').textContent = 'Hint: check the highlighted cell!';
+});
+
+startGame();
+</script>
+</body>
+</html>
